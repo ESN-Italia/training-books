@@ -36,8 +36,9 @@ class Books extends ResourceController {
 
   protected async postResources(): Promise<Book> {
     const bookId = Date.now().toString();
-    await ddb.put({ TableName: DDB_TABLE_BOOKS, Item: { bookId } });
-    return new Book({ bookId });
+    // ...
+    // await ddb.put({ TableName: DDB_TABLE_BOOKS, /* ... */ });
+    return null;
   }
 
   protected async getResource(): Promise<Book> {

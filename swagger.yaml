@@ -1,0 +1,163 @@
+openapi: 3.0.3
+
+info:
+  title: CommIT workshop Feb 2023
+  version: 1.0.0
+
+servers:
+  - url: https:/api.commitesn.link/YOUR_INITIALS
+
+tags:
+  - name: Books
+    description: The platform's books
+
+paths:
+  /books:
+    get:
+      summary: Get the books
+      tags: [Books]
+      parameters:
+        - name: top
+          in: query
+          schema:
+            type: number
+        - name: genre
+          in: query
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [year, genre]
+      responses:
+        200:
+          $ref: '#/components/responses/Books'
+    post:
+      summary: Insert a new book
+      tags: [Books]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Book'
+      responses:
+        200:
+          $ref: '#/components/responses/Book'
+        400:
+          $ref: '#/components/responses/BadParameters'
+  /books/{bookId}:
+    get:
+      summary: Get a book
+      tags: [Books]
+      parameters:
+        - name: bookId
+          in: path
+          description: Book ID
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          $ref: '#/components/responses/Book'
+    put:
+      summary: Edit a book
+      tags: [Books]
+      parameters:
+        - name: bookId
+          in: path
+          description: Book ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Book'
+      responses:
+        200:
+          $ref: '#/components/responses/Book'
+        400:
+          $ref: '#/components/responses/BadParameters'
+    patch:
+      summary: Actions on a book
+      tags: [Books]
+      parameters:
+        - name: bookId
+          in: path
+          description: Book ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum: [RATE]
+                rating:
+                  type: number
+                  enum: [1, 2, 3, 4, 5]
+                  description: (RATE)
+      responses:
+        200:
+          $ref: '#/components/responses/OperationCompleted'
+        400:
+          $ref: '#/components/responses/BadParameters'
+    delete:
+      summary: Delete a book
+      tags: [Books]
+      parameters:
+        - name: bookId
+          in: path
+          description: Book ID
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          $ref: '#/components/responses/OperationCompleted'
+        400:
+          $ref: '#/components/responses/BadParameters'
+
+components:
+  schemas:
+    Book:
+      type: object
+      additionalProperties: {}
+
+  responses:
+    Book:
+      description: A book
+      content:
+        application/json:
+          schema:
+            type: object
+            $ref: '#/components/schemas/Book'
+    Books:
+      description: The books
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/Book'
+    BadParameters:
+      description: Bad input parameters
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: The request isn't valid
+    OperationCompleted:
+      description: Operation completed

@@ -102,3 +102,11 @@ dist
 
 # TernJS port file
 .tern-port
+
+# @idea custom
+.cdk.staging
+cdk.out
+cdk.context.json
+output-config.json
+src/**/*.js
+src/**/*.js.map

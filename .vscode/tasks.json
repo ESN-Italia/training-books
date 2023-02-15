@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "inputs": [],
+  "tasks": [
+    {
+      "label": "Deploy your back-end environment",
+      "type": "shell",
+      "command": "npm run deploy-quick",
+      "group": "build",
+      "options": { "cwd": "" },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Init your back-end environment",
+      "type": "shell",
+      "command": "npm run init",
+      "group": "build",
+      "options": { "cwd": "" },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    }
+  ]
+}

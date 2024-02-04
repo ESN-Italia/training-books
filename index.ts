@@ -3,11 +3,33 @@ import * as pulumi from "@pulumi/pulumi";
 
 import SwaggerParser from '@apidevtools/swagger-parser';
 
+/* CONFIGS */
+const CONFIG = {
+    stage: 'YOUR_INITIALS',
+    apiDefinitionFile: './swagger.yaml'
+};
+// Note: AWS configs like username or region are already inside pulumi
+
+const apiroutes = [{ name: 'books', paths: ['/books', '/books/{bookId}'] }];
+
+const defaultLambdaFnProps = {
+    runtime: aws.lambda.Runtime.NodeJS14dX,
+    architectures: ["arm64"],
+    timeout: 10,
+    memorySize: 1024,
+  };
+
+// Deployment code
 const workshop_deploy = async () => {
+
     // 1.   Setting up structure and default values
+    const region = aws.config.region;
+    const account = await aws.getCallerIdentity({}).then(current => current.accountId);
+
+    const lambdaFunctionArns : pulumi.Output<string>[] = [];
 
     // Parse the OpenAPI (Swagger) definition, to integrate it with AWS resources
-    const apiDefinition: any = await SwaggerParser.dereference('./swagger.yaml'); // TODO: get from global config
+    const apiDefinition: any = await SwaggerParser.dereference(CONFIG.apiDefinitionFile);
     apiDefinition['x-amazon-apigateway-cors'] = {
         allowOrigins: ['*'],
         allowMethods: ['*'],
@@ -16,7 +38,8 @@ const workshop_deploy = async () => {
 
     // Set metadata to recognize APIs in the API Gateway console
     apiDefinition.info.description = apiDefinition.info.title;
-    apiDefinition.info.title = "commit"; // TODO: get from PULUMI
+    apiDefinition.info.title = pulumi.getStack();
+
 
     // 2.   Setup Lambda functions
 
@@ -26,89 +49,100 @@ const workshop_deploy = async () => {
         payloadFormatVersion: '2.0'
     };
 
-    const lambdaFunctions : pulumi.Output<string>[] = [];
+    // Create a Role for the lambda function to provide it permissions
+    const lambdaRole = new aws.iam.Role("LambdaFnRole", {
+        assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({ Service: "lambda.amazonaws.com" }),
+    });
+
+    // Attach cloudwatch's specific permissions
+    const cloudwatchLogGroup = new aws.cloudwatch.LogGroup("commitLogs", {retentionInDays: 1});
+    const lambdaLoggingPolicyDocument = aws.iam.getPolicyDocument({
+        statements: [{
+            effect: "Allow",
+            actions: [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+            ],
+            resources: ["arn:aws:logs:*:*:*"],
+        }],
+    });
+    const lambdaLoggingPolicy = new aws.iam.Policy("lambdaLoggingPolicy", {
+        path: "/",
+        description: "IAM policy for logging from a lambda",
+        policy: lambdaLoggingPolicyDocument.then(lambdaLoggingPolicyDocument => lambdaLoggingPolicyDocument.json),
+    });
+    const lambdaLogs = new aws.iam.RolePolicyAttachment("lambdaLogs", {
+        role: lambdaRole.name,
+        policyArn: lambdaLoggingPolicy.arn,
+    });
+
+    // Attach lambda function's specific permissions
+    const accessIDEAResources = new aws.iam.Policy("AccessIDEAResources", {
+        policy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [{
+                Action: ['dynamodb:*', 'lambda:InvokeFunction'],
+                Effect: "Allow",
+                Resource: [`arn:aws:dynamodb:${region}:${account}:table/*`, `arn:aws:lambda:${region}:${account}:function:*`]
+            }]
+        }),
+    });
+
+    const lambdaRolePolicyAttachment = new aws.iam.RolePolicyAttachment("lambdaRolePolicyAttachment", {
+        role: lambdaRole.name,
+        policyArn: accessIDEAResources.arn,
+    });
 
     // Create a Lambda function for each Resource Controller
-    [{ name: 'books', paths: ['/books', '/books/{bookId}'] }].forEach(resource => { // TODO: iterate on a JSON variable
-        const lambdaFnName = "commit".concat('_', "dev", '_', resource.name); // TODO: take project name from config
-
-        // FIXME: code for creating a Policy
-
-        // const region = aws.getRegionOutput().name;
-        // const account = aws.getCallerIdentityOutput.name;
-
-        // const accessIDEAResources = new aws.iam.Policy("AccessIDEAResources", {
-        //     policy: JSON.stringify({
-        //         Version: "2012-10-17",
-        //         Statement: [{
-        //             Action: ['dynamodb:*', 'lambda:InvokeFunction'],
-        //             Effect: "Allow",
-        //             Resource: `*`,   // TODO: add ${region}:${account}; add function (see Carbo's code)
-        //         }]
-        //     }),
-        // });
-
-        // params.lambdaFunctions.forEach(lambdaFn => {
-        //   if (lambdaFn.role) lambdaFn.role.attachInlinePolicy(accessIDEAResources);
-        // });
-
-        // TODO: Change it to a Policy one
-        const lambdaRole = new aws.iam.Role("lambdaRole", {
-            assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal(aws.iam.Principals.LambdaPrincipal),
-            managedPolicyArns: [aws.iam.ManagedPolicy.AWSLambdaBasicExecutionRole, aws.iam.ManagedPolicy.AmazonDynamoDBFullAccess]
-        });
+    apiroutes.forEach(resource => {
+        const lambdaFnName = pulumi.getStack().concat('_', "dev", '_', resource.name);
 
         const lambdaFn = new aws.lambda.Function("fn", {
+            ...defaultLambdaFnProps,
             role: lambdaRole.arn,
             code: new pulumi.asset.AssetArchive({
                 ".": new pulumi.asset.FileArchive("./src/")
             }),
             name: lambdaFnName,
-            runtime: aws.lambda.Runtime.NodeJS16dX,
             handler: `./handlers/${resource.name}.handler`,
             environment: {
                 variables: {
                     NODE_OPTIONS: "--enable-source-maps",
-                    PROJECT: "commit",  // TODO: take project name from config
-                    STAGE: "dev",       // TODO: take project name from config
+                    PROJECT: pulumi.getStack(),
+                    STAGE: CONFIG.stage,
                     RESOURCE: `${resource.name}`,
                 }
-            },
-            // TODO: add other default values?
+            }
         });
 
-        lambdaFunctions.push(lambdaFn.invokeArn);
-
-        // Allow the api to execute the Lambda function
-        const permission = new aws.lambda.Permission("permission", {
-            action: "lambda:InvokeFunction",
-            function: lambdaFn.name,
-            principal: "apigateway.amazonaws.com",
-            // sourceArn: ......    // TODO: add correct sourceArn
-        });
-
+        lambdaFunctionArns.push(lambdaFn.invokeArn);
     });
+
 
     // 3.   Setup up API gateway
 
     const api = new aws.apigatewayv2.Api("HttpApi", {
         protocolType: "HTTP",
         body: pulumi
-        .all(lambdaFunctions)
+        .all(lambdaFunctionArns)
         .apply((functionArn) => {
-            [{ name: 'books', paths: ['/books', '/books/{bookId}'] }].forEach((resource, index) => { // TODO: iterate on a JSON variable
+            /* Unfortunately Pulumi, to my understanding, seems to not suit perfectly OpenAPI yet.
+             * Pulumi provides a highly parallelizable infrastructure, that leads to a big trouble when it is needed
+             * to connect lambdas to the API Gateway, since it's not known when Lambdas ARNs will be available.
+             * This is a workaround to fix the issue.
+             */
+            apiroutes.forEach((resource, index) => {
                 if (resource.paths) {
                     resource.paths.forEach(path => {
-                    if (apiDefinition.paths[path]) {
-                        Object.keys(apiDefinition.paths[path]).forEach(method => {
-
-                                apiDefinition.paths[path][method]['x-amazon-apigateway-integration'] = {
-                                ...resourceIntegrationSetting,
-                                uri: functionArn[index]
-                            };
-
-                        });
-                    }
+                        if (apiDefinition.paths[path]) {
+                            Object.keys(apiDefinition.paths[path]).forEach(method => {
+                                    apiDefinition.paths[path][method]['x-amazon-apigateway-integration'] = {
+                                    ...resourceIntegrationSetting,
+                                    uri: functionArn[index]
+                                };
+                            });
+                        }
                     });
                 }
             });
@@ -117,26 +151,18 @@ const workshop_deploy = async () => {
         }),
     });
 
-    // TODO: we can remove it, since it's not needed for the workshop. AWS is already generating a usable URL for us
-    // const apiDomain = new aws.apigatewayv2.DomainName("HttpDomain", {
-    //     domainName: "ws-api.example.com",
-    //     domainNameConfiguration: {
-    //         certificateArn: aws_acm_certificate.example.arn,
-    //         endpointType: "REGIONAL",
-    //         securityPolicy: "TLS_1_2",
-    //     },
-    // });
+    // Give permission to Gateway API to execute the lambda functions
+    apiroutes.forEach(resource => {
+        const lambdaFnName = pulumi.getStack().concat('_', "dev", '_', resource.name);
 
-    // const HttpRoute = new aws.apigatewayv2.Route("HttpRoute", {
-    //     apiId: api.id,
-    //     routeKey: "$default", // This is a default catch-all route
-    // });
+        const permission = new aws.lambda.Permission("permission", {
+            action: "lambda:InvokeFunction",
+            function: lambdaFnName,
+            principal: "apigateway.amazonaws.com",
+            sourceArn: pulumi.interpolate`${api.executionArn}/*`
+        });
+    });
 
-    // const apiMapping = new aws.apigatewayv2.ApiMapping("HttpApiMapping", {
-    //     apiId: api.id,
-    //     domainName: apiDomain.id,
-    //     stage: apiStage.id,                       // TODO: take from config
-    // });
 
     // 4.   Create stage and deploy
 
@@ -148,9 +174,10 @@ const workshop_deploy = async () => {
     const apiStage = new aws.apigatewayv2.Stage("HttpApiDefaultStage", {
         apiId: api.id,
         deploymentId: deploy.id,
-        name: "dev", // TODO: take from config?
-        // autoDeploy: true
+        name: CONFIG.stage,
+        autoDeploy: true
     });
+
 
     // 5.   Create DynamoDB tables
 
@@ -169,15 +196,11 @@ const workshop_deploy = async () => {
             attributeName: "",
         },
         writeCapacity: 1,
-    }/*, {
-        protect: true,
-    }*/);
+    }, {
+        protect: false, // Put to 'true' to block 'pulumi destroy'
+    });
 
-    //TODO: It would be nice to print out API URL after deployment
-
-    // console.log(`${apiStage.invokeUrl}`);
-    // console.log(pulumi.interpolate`${apiStage.invokeUrl}`)
+    return apiStage.invokeUrl;
 };
-workshop_deploy();
 
-// export const url = pulumi.interpolate`${apiStage.invokeUrl}`;
+export const url = pulumi.interpolate`${workshop_deploy()}/books`;

@@ -6,7 +6,8 @@ import SwaggerParser from '@apidevtools/swagger-parser';
 /* CONFIGS */
 const CONFIG = {
     stage: 'YOUR_INITIALS',
-    apiDefinitionFile: './swagger.yaml'
+    apiDefinitionFile: './swagger.yaml',
+    tableName: 'YOUR_INITIALS' + '_books'
 };
 // Note: AWS configs like username or region are already inside pulumi
 
@@ -181,13 +182,13 @@ const workshop_deploy = async () => {
 
     // 5.   Create DynamoDB tables
 
-    const booksTable = new aws.dynamodb.Table("ms_books", {
+    const booksTable = new aws.dynamodb.Table(CONFIG.tableName, {
         attributes: [{
             name: "genre-year_of_publication-index",
             type: "S",
         }],
         hashKey: "genre-year_of_publication-index",
-        name: "ms_books",
+        name: CONFIG.tableName,
         pointInTimeRecovery: {
             enabled: false,
         },

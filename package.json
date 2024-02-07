@@ -2,6 +2,7 @@
   "version": "1.0.0",
   "name": "back-end",
   "scripts": {
+    "postinstall": "tsc --build && cd src && npm install",
     "lint": "eslint --ext .ts",
     "compile": "tsc --build",
     "deploy": "cdk deploy",
@@ -16,6 +17,10 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^10.1.0",
+    "@pulumi/aws": "^6.0.0",
+    "@pulumi/aws-apigateway": "^2.1.0",
+    "@pulumi/awsx": "^2.0.2",
+    "@pulumi/pulumi": "^3.0.0",
     "@tsconfig/node16": "^1.0.3",
     "@types/aws-lambda": "^8.10.109",
     "@types/node": "^16.18.10",

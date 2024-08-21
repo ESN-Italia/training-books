@@ -6,7 +6,7 @@ import { ApiDomainStack } from './api-domain-stack';
 import { ResourceController, ApiStack, DDBTable } from './api-stack';
 import { FrontEndStack } from './front-end-stack';
 
-import { parameters, stages, Stage, DOMAIN } from './environments';
+import { parameters, Stage, DOMAIN } from './environments';
 
 
 //

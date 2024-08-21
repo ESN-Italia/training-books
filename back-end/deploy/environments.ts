@@ -17,19 +17,6 @@ export const parameters: Parameters = {
   apiDomain: 'api.'.concat(DOMAIN)
 };
 
-export const stages: { [stage: string]: Stage } = {
-  prod: {
-    domain: DOMAIN,
-    alternativeDomains: PROD_CUSTOM_DOMAIN ? [PROD_CUSTOM_DOMAIN] : [],
-    destroyDataOnDelete: false,
-    logLevel: 'INFO'
-  },
-  dev: {
-    domain: 'dev.'.concat(DOMAIN),
-    destroyDataOnDelete: true,
-    logLevel: 'DEBUG'
-  }
-};
 
 export interface Parameters {
   /**

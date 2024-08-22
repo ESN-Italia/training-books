@@ -4,11 +4,14 @@ import { IonicRouteStrategy, provideIonicAngular } from '@ionic/angular/standalo
 
 import { routes } from './app/app.routes';
 import { AppComponent } from './app/app.component';
+import { environment } from './environments/environment.idea';
+import { IDEAEnvironment } from '@idea-ionic/common';
 
 bootstrapApplication(AppComponent, {
   providers: [
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
     provideIonicAngular(),
     provideRouter(routes, withPreloading(PreloadAllModules)),
+    { provide: IDEAEnvironment, useValue:environment }
   ],
 });

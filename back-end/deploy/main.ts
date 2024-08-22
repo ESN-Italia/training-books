@@ -37,7 +37,11 @@ const createApp = async (): Promise<void> => {
   // @ts-ignore
   const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION };
 
-
+  const STAGE_fromcontext = app.node.tryGetContext('stage');
+  if (STAGE!= STAGE_fromcontext) {
+    console.log('Missing or Mismatching STAGE\n\n');
+    throw new Error();
+  }
   const STAGE_VARIABLES = {
     domain: STAGE.concat('.',DOMAIN),
     destroyDataOnDelete: true,

@@ -30,9 +30,8 @@ class Books extends ResourceController {
 
   protected async getResources(): Promise<Book[]> {
     // ...
-    // const book = await ddb.get({ TableName: DDB_TABLE_BOOKS, /* ... */ });
-    this.logger.debug('invoked get');
-    return [{ bookId: 'awefawefa', title: 'baginga' } as Book];
+    // const book = await ddb.scan({ TableName: DDB_TABLE_BOOKS, /* ... */ });
+    return [];
   }
 
   protected async postResources(): Promise<Book> {

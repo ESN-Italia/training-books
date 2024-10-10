@@ -49,7 +49,11 @@ You also need an AWS account with sufficient permissions to create resources lik
 
 ## Setup Instructions
 -1. **Branch**: Create a branch with tour initials, work only in this branch.
+
 0. **AWS Profile**: Setup an aws profile named `training-books` pointing to the aws account and region `eu-south-1`(or whatever you prefer). [AWS Docs](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html)
+```
+aws configure --profile training-books
+```
 
 ### Backend Setup
 

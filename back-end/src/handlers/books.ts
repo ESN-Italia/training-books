@@ -10,7 +10,7 @@ import { Book } from '../models/book.model';
 /// CONSTANTS, ENVIRONMENT VARIABLES, HANDLER
 ///
 
-const DDB_TABLE_BOOKS = 'your_table_name'; // include your initial in the name, so you don't overlap with others
+const DDB_TABLE_BOOKS = process.env.DDB_TABLE_books; // include your initial in the name, so you don't overlap with others
 const ddb = new DynamoDB();
 
 export const handler = (ev: any, _: any, cb: any): Promise<void> => new Books(ev, cb).handleRequest();
@@ -30,7 +30,7 @@ class Books extends ResourceController {
 
   protected async getResources(): Promise<Book[]> {
     // ...
-    // const book = await ddb.get({ TableName: DDB_TABLE_BOOKS, /* ... */ });
+    // const book = await ddb.scan({ TableName: DDB_TABLE_BOOKS, /* ... */ });
     return [];
   }
 
@@ -38,6 +38,7 @@ class Books extends ResourceController {
     const bookId = Date.now().toString();
     // ...
     // await ddb.put({ TableName: DDB_TABLE_BOOKS, /* ... */ });
+    this.logger.info(bookId);
     return null;
   }
 

@@ -5,7 +5,7 @@ info:
   version: 1.0.0
 
 servers:
-  - url: https:/api.commitesn.link/YOUR_INITIALS
+  - url: https:/api.commit-esnitalia.click/dev
 
 tags:
   - name: Books

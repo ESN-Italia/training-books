@@ -7,6 +7,9 @@ import { NodejsFunction, NodejsFunctionProps } from 'aws-cdk-lib/aws-lambda-node
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import * as IAM from 'aws-cdk-lib/aws-iam';
 import * as ApiGw from 'aws-cdk-lib/aws-apigatewayv2';
+import * as DDB from 'aws-cdk-lib/aws-dynamodb';
+// import { Subscription, SubscriptionProtocol, Topic } from 'aws-cdk-lib/aws-sns';
+// import { SnsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 
 export interface ApiProps extends cdk.StackProps {
   project: string;
@@ -14,21 +17,37 @@ export interface ApiProps extends cdk.StackProps {
   apiDomain: string;
   apiDefinitionFile: string;
   resourceControllers: ResourceController[];
+  tables: { [tableName: string]: DDBTable };
   removalPolicy: RemovalPolicy;
+  lambdaLogLevel: 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
 }
 export interface ResourceController {
   name: string;
   paths?: string[];
+  isAuthFunction?: boolean;
+}
+export interface DDBTable {
+  PK: DDB.Attribute;
+  SK?: DDB.Attribute;
+  indexes?: DDB.GlobalSecondaryIndexProps[];
+  stream?: DDB.StreamViewType;
+  expiresAtField?: string;
 }
 
 const defaultLambdaFnProps: NodejsFunctionProps = {
-  runtime: Lambda.Runtime.NODEJS_14_X,
+  runtime: Lambda.Runtime.NODEJS_18_X,
   architecture: Lambda.Architecture.ARM_64,
-  timeout: Duration.seconds(10),
+  timeout: Duration.seconds(30),
   memorySize: 1024,
   bundling: { minify: true, sourceMap: true },
   environment: { NODE_OPTIONS: '--enable-source-maps' },
-  logRetention: RetentionDays.TWO_WEEKS
+  logRetention: RetentionDays.TWO_WEEKS,
+  logFormat: Lambda.LogFormat.JSON
+};
+
+const defaultDDBTableProps: DDB.TableProps | any = {
+  billingMode: DDB.BillingMode.PAY_PER_REQUEST,
+  pointInTimeRecovery: true
 };
 
 export class ApiStack extends cdk.Stack {
@@ -51,9 +70,32 @@ export class ApiStack extends cdk.Stack {
       resourceControllers: props.resourceControllers,
       defaultLambdaFnProps,
       project: props.project,
-      stage: props.stage
+      stage: props.stage,
+      lambdaLogLevel: props.lambdaLogLevel,
     });
-    this.allowLambdaFunctionsToAccessTablesAndFunctions({ lambdaFunctions: Object.values(lambdaFunctions) });
+
+    this.allowLambdaFunctionsToSystemsManager({ lambdaFunctions: Object.values(lambdaFunctions) });
+    this.createDDBTablesAndAllowLambdaFunctions({
+      project: props.project,
+      stage: props.stage,
+      tables: props.tables,
+      defaultTableProps: defaultDDBTableProps,
+      removalPolicy: props.removalPolicy,
+      lambdaFunctions: Object.values(lambdaFunctions)
+    });
+    //
+    // PROJECT CUSTOM
+    //
+
+    // if (lambdaFunctions['sesNotifications']) {
+    //   const topic = Topic.fromTopicArn(this, 'SESTopicToHandleSESBounces', props.ses.notificationTopicArn);
+    //   new Subscription(this, 'SESSubscriptionToHandleSESBounces', {
+    //     topic,
+    //     protocol: SubscriptionProtocol.LAMBDA,
+    //     endpoint: lambdaFunctions['sesNotifications'].functionArn
+    //   });
+    //   lambdaFunctions['sesNotifications'].addEventSource(new SnsEventSource(topic));
+    // }
   }
 
   //
@@ -66,6 +108,7 @@ export class ApiStack extends cdk.Stack {
     apiDefinitionFile: string;
     apiDomain: string;
   }): Promise<{ api: cdk.aws_apigatewayv2.CfnApi }> {
+    // create Api Construct
     const api = new ApiGw.CfnApi(this, 'HttpApi');
 
     // parse the OpenAPI (Swagger) definition, to integrate it with AWS resources
@@ -105,6 +148,7 @@ export class ApiStack extends cdk.Stack {
     resourceControllers: ResourceController[];
     defaultLambdaFnProps: NodejsFunctionProps;
     api: cdk.aws_apigatewayv2.CfnApi;
+    lambdaLogLevel: 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
   }): {
     lambdaFunctions: { [resourceName: string]: NodejsFunction };
   } {
@@ -122,7 +166,8 @@ export class ApiStack extends cdk.Stack {
       const lambdaFn = new NodejsFunction(this, resource.name.concat('Function'), {
         ...params.defaultLambdaFnProps,
         functionName: lambdaFnName,
-        entry: `./src/handlers/${resource.name}.ts`
+        entry: `./src/handlers/${resource.name}.ts`,
+        applicationLogLevel: params.lambdaLogLevel
       });
 
       // link the Lambda function to the Resource Controller's paths (if any)
@@ -145,33 +190,61 @@ export class ApiStack extends cdk.Stack {
       lambdaFn.addPermission(`${resource.name}-permission`, {
         principal: new IAM.ServicePrincipal('apigateway.amazonaws.com'),
         action: 'lambda:InvokeFunction',
-        sourceArn: `arn:aws:execute-api:${region}:${account}:${params.api.ref}/*/*/*`
+        sourceArn: `arn:aws:execute-api:${region}:${account}:${params.api.ref}/*/*`
       });
 
       lambdaFn.addEnvironment('PROJECT', params.project);
       lambdaFn.addEnvironment('STAGE', params.stage);
       lambdaFn.addEnvironment('RESOURCE', resource.name);
-
       lambdaFunctions[resource.name] = lambdaFn;
     });
 
     return { lambdaFunctions };
   }
-  private allowLambdaFunctionsToAccessTablesAndFunctions(params: { lambdaFunctions: NodejsFunction[] }): void {
-    const region = cdk.Stack.of(this).region;
-    const account = cdk.Stack.of(this).account;
-    const accessIDEAResources = new IAM.Policy(this, 'AccessIDEAResources', {
+
+  private allowLambdaFunctionsToSystemsManager(params: { lambdaFunctions: NodejsFunction[] }): void {
+    const accessSystemsManagerPolicy = new IAM.Policy(this, 'AccessSystemsManager', {
       statements: [
-        new IAM.PolicyStatement({
-          effect: IAM.Effect.ALLOW,
-          actions: ['dynamodb:*', 'lambda:InvokeFunction'],
-          resources: [`arn:aws:dynamodb:${region}:${account}:table/*`, `arn:aws:lambda:${region}:${account}:function:*`]
-        })
+        new IAM.PolicyStatement({ effect: IAM.Effect.ALLOW, actions: ['ssm:GetParameter'], resources: ['*'] })
       ]
     });
-
     params.lambdaFunctions.forEach(lambdaFn => {
-      if (lambdaFn.role) lambdaFn.role.attachInlinePolicy(accessIDEAResources);
+      if (lambdaFn.role) lambdaFn.role.attachInlinePolicy(accessSystemsManagerPolicy);
     });
+  }
+
+  private createDDBTablesAndAllowLambdaFunctions(params: {
+    project: string;
+    stage: string;
+    tables: { [tableName: string]: DDBTable };
+    defaultTableProps: DDB.TableProps;
+    removalPolicy: RemovalPolicy;
+    lambdaFunctions: NodejsFunction[];
+  }): { tables: { [tableName: string]: DDB.Table } } {
+    const tables: { [tableName: string]: DDB.Table } = {};
+
+    for (const tableName in params.tables) {
+      const physicalTableName = params.project.concat('-', params.stage,'_',tableName);
+      const table = new DDB.Table(this, tableName.concat('-Table'), {
+        ...params.defaultTableProps,
+        tableName: physicalTableName,
+        partitionKey: params.tables[tableName].PK,
+        sortKey: params.tables[tableName].SK,
+        removalPolicy: params.removalPolicy,
+        stream: params.tables[tableName].stream,
+        timeToLiveAttribute: params.tables[tableName].expiresAtField
+      });
+
+      (params.tables[tableName].indexes || []).forEach(GSI => table.addGlobalSecondaryIndex(GSI));
+
+      params.lambdaFunctions.forEach(lambdaFn => {
+        table.grantReadWriteData(lambdaFn);
+        lambdaFn.addEnvironment('DDB_TABLE_'.concat(tableName), physicalTableName);
+      });
+
+      tables[tableName] = table;
+    }
+
+    return { tables };
   }
 }

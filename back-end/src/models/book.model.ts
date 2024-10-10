@@ -5,10 +5,13 @@ export class Book extends Resource {
    * The ID of the book.
    */
   bookId: string;
+  title: string;
+
 
   load(x: any): void {
     super.load(x);
     this.bookId = this.clean(x.bookId, String);
+    this.title = this.clean(x.title,String);
     // ...
   }
 

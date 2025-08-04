@@ -15,6 +15,7 @@
     "idea-toolbox": "^6.x.x"
   },
   "devDependencies": {
+    "@angular/cli": "18.2",
     "@apidevtools/swagger-parser": "^10.1.0",
     "@tsconfig/node18": "^1.0.3",
     "@types/aws-lambda": "^8.10.109",

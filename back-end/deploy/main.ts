@@ -12,7 +12,7 @@ import { parameters, Stage, DOMAIN } from './environments';
 //
 // STAGE
 //
-const STAGE = "dev"; //substitute with your initials
+const STAGE = "dr"; //substitute with your initials
 
 //
 // RESOURCES

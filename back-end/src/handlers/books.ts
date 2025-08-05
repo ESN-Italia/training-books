@@ -3,7 +3,6 @@
 ///
 
 import { DynamoDB, ResourceController } from 'idea-aws';
-
 import { Book } from '../models/book.model';
 
 ///
@@ -13,7 +12,8 @@ import { Book } from '../models/book.model';
 const DDB_TABLE_BOOKS = process.env.DDB_TABLE_books; // include your initial in the name, so you don't overlap with others
 const ddb = new DynamoDB();
 
-export const handler = (ev: any, _: any, cb: any): Promise<void> => new Books(ev, cb).handleRequest();
+export const handler = (ev: any, _: any, cb: any): Promise<void> =>
+  new Books(ev, cb).handleRequest();
 
 ///
 /// RESOURCE CONTROLLER
@@ -29,17 +29,56 @@ class Books extends ResourceController {
   }
 
   protected async getResources(): Promise<Book[]> {
-    // ...
-    // const book = await ddb.scan({ TableName: DDB_TABLE_BOOKS, /* ... */ });
-    return [];
+    const books: Book[] = [];
+
+    const result = await ddb.scan({
+      TableName: DDB_TABLE_BOOKS,
+      ProjectionExpression: 'bookId, title, author, publishedDate, isbn, pages, genre, summary'
+    });
+    console.log('Books retrieved:', result);
+
+    for (const item of result) {
+      const book = new Book();
+      book.safeLoad(item, item);
+      books.push(book);
+    }
+    return books;
   }
 
   protected async postResources(): Promise<Book> {
     const bookId = Date.now().toString();
-    // ...
-    // await ddb.put({ TableName: DDB_TABLE_BOOKS, /* ... */ });
-    this.logger.info(bookId);
-    return null;
+
+    // Parsing del body se arriva come stringa
+    let body = this.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch (err) {
+        this.logger.error('Invalid JSON body', body);
+        throw new Error('Malformed request');
+      }
+    }
+
+    // Creazione e caricamento del libro
+    const book = new Book();
+    book.bookId = bookId;
+    book.load(body);
+
+    // Validazione
+    const validationErrors = book.validate();
+    if (validationErrors.length > 0) {
+      this.logger.error('Validation errors:', validationErrors);
+      throw new Error(`Malformed request: ${validationErrors.join('; ')}`);
+    }
+
+    // Salvataggio su DynamoDB
+    await ddb.put({
+      TableName: DDB_TABLE_BOOKS,
+      Item: book
+    });
+
+    this.logger.info('Book saved with ID:', bookId);
+    return book;
   }
 
   protected async getResource(): Promise<Book> {

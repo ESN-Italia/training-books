@@ -31,7 +31,7 @@ export class Book extends Resource {
     this.bookId = safeData.bookId;
     this.title = newData.title || safeData.title;
     this.author = newData.author || safeData.author;
-    this.publishedDate = newData.publishedData || safeData.publishedData;
+    this.publishedDate = newData.publishedDate || safeData.publishedDate;
     this.isbn = newData.isbn || safeData.isbn;
     this.pages = newData.pages || safeData.pages;
     this.genre = newData.genre || safeData.genre;

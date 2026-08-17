@@ -13,6 +13,7 @@ This repository contains a fullstack training project designed to demonstrate th
   - [Frontend Setup](#frontend-setup)
 - [Deployment](#deployment)
 - [Usage](#usage)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -39,21 +40,76 @@ Before setting up the project, ensure you have the following installed:
 - **Node.js** (tested with v20.13)
 - **npm** (tested with v10.5)
 - **Angular CLI** (tested with v18.2)
-- **AWS CLI** (tested v2.13.35)
-- **AWS CDK** (tested v2.147.1)
+- **AWS CLI v2** (tested v2.18.3) — v2 is mandatory: AWS CLI v1 cannot authenticate against IAM Identity Center.
+- **AWS CDK** (tested v2.166.0)
 - **TypeScript** (tested with v5.5.3)
 
-You also need an AWS account with sufficient permissions to create resources like Lambda functions, API Gateway, DynamoDB tables, etc.
-
-
+You also need access to the training AWS account through **AWS IAM Identity Center** (formerly AWS SSO), with a permission set that allows creating Lambda functions, API Gateway APIs, DynamoDB tables, S3 buckets and CloudFront distributions (e.g. `PowerUserAccess`). Ask the trainers to grant you access to the account if you don't see it in the access portal.
 
 ## Setup Instructions
--1. **Branch**: Create a branch with tour initials, work only in this branch.
 
-0. **AWS Profile**: Setup an aws profile named `training-books` pointing to the aws account and region `eu-south-1`(or whatever you prefer). [AWS Docs](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html)
-```
-aws configure --profile training-books
-```
+1. **Branch**: Create a branch with your initials, and work only in this branch.
+
+2. **AWS Profile (IAM Identity Center)**: The deploy scripts always pass `--profile training-books`, so the profile **must** be named exactly `training-books`.
+
+   Run the guided setup once:
+
+   ```bash
+   aws configure sso --profile training-books
+   ```
+
+   The command asks a first group of questions, about the login itself:
+
+   | Prompt | Value |
+   | --- | --- |
+   | SSO session name | `esn-italia` (any name; it only groups the login in your local config) |
+   | SSO start URL | `https://esn-italia.awsapps.com/start` |
+   | SSO region | `eu-south-1` |
+   | SSO registration scopes | `sso:account:access` (accept the default) |
+
+   At this point a browser window opens: sign in and approve the request. Back in the terminal, the CLI lists the accounts and the roles available to you: select the training account, then the permission set granted to you (e.g. `PowerUserAccess`). Use the arrow keys and confirm with Enter.
+
+   Then it asks a second group of questions, about the profile it is writing:
+
+   | Prompt | Value |
+   | --- | --- |
+   | CLI default client Region | `eu-south-1` (or whatever you prefer) |
+   | CLI default output format | `json` |
+   | CLI profile name | `training-books` (only asked if you omitted `--profile` above) |
+
+   The result in `~/.aws/config` looks like this:
+
+   ```ini
+   [profile training-books]
+   sso_session = esn-italia
+   sso_account_id = 123456789012
+   sso_role_name = PowerUserAccess
+   region = eu-south-1
+   output = json
+
+   [sso-session esn-italia]
+   sso_start_url = https://esn-italia.awsapps.com/start
+   sso_region = eu-south-1
+   sso_registration_scopes = sso:account:access
+   ```
+
+   > **Migrating from the old IAM user setup?** Delete any leftover `[training-books]` section from `~/.aws/credentials`. That file takes precedence over `~/.aws/config`, so old static `aws_access_key_id` / `aws_secret_access_key` entries silently shadow the Identity Center profile and you get confusing `InvalidClientTokenId` or `AccessDenied` errors even after a successful login.
+
+   [AWS Docs: configure the AWS CLI for IAM Identity Center](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html)
+
+3. **Log in**: unlike IAM access keys, Identity Center credentials are temporary and expire (typically after 8–12 hours). Start each working session with:
+
+   ```bash
+   aws sso login --profile training-books
+   ```
+
+   Check that it worked with:
+
+   ```bash
+   aws sts get-caller-identity --profile training-books
+   ```
+
+   When a deploy suddenly fails with `Error loading SSO Token`, `The SSO session has expired` or `ExpiredToken`, you just need to run `aws sso login` again.
 
 ### Backend Setup
 
@@ -62,10 +118,11 @@ aws configure --profile training-books
    npm install -g aws-cdk
    ```
 
-2. **Bootstrap AWS CDK**: Initialize your environment to use AWS CDK.
+2. **Bootstrap AWS CDK**: Initialize the environment to use AWS CDK. Note the explicit profile: without it the CDK falls back to the default profile, which is not your Identity Center one.
    ```bash
-   cdk bootstrap
+   cdk bootstrap --profile training-books
    ```
+   The account only needs to be bootstrapped once per account/region, so if somebody did the training before you this step is likely already done, and the command is a no-op.
 
 3. **Install Dependencies**: Navigate to the backend directory and install the necessary dependencies.
    ```bash
@@ -80,7 +137,7 @@ aws configure --profile training-books
    const STAGE = "dev"; //substitute with your initials
    ```
 
-4. **Deploy the Backend**:
+5. **Deploy the Backend**:
    ```bash
    ./deploy.sh <your_initials>
    ```
@@ -100,8 +157,8 @@ aws configure --profile training-books
    ```
 
 3. **Configure the API Endpoint**:
-   - Open the environment file (`src/environments/environment.ts`).
-   - Replace `STAGE` variable with the same variable you used in the back-end (i.e. your initials)
+   - Open the environment file (`src/environments/environment.idea.ts`).
+   - Replace the `STAGE` constant with the same value you used in the back-end (i.e. your initials)
 
 4. **Run the Development Server**:
    ```bash
@@ -110,6 +167,12 @@ aws configure --profile training-books
    The application will be accessible at `http://localhost:8100/`.
 
 ## Deployment
+
+Both deploy scripts use the `training-books` profile, so make sure your Identity Center session is still valid before running them:
+
+```bash
+aws sso login --profile training-books
+```
 
 ### Deploying the Frontend
 
@@ -131,6 +194,19 @@ The backend deployment is managed through AWS CDK. To deploy updates to the back
 After deployment, you can interact with the application through the Angular frontend. The frontend communicates with the backend via the API Gateway, which triggers Lambda functions to process requests and interact with other AWS services (e.g., DynamoDB).
 
 The objective is to learn the workings of the stack by implementing a CRUD on the Books resource. More information can be found in file `TRAINING.md`
+
+## Troubleshooting
+
+Most setup problems are authentication problems. This project authenticates through AWS IAM Identity Center, whose credentials are **temporary**.
+
+| Error | Cause and fix |
+| --- | --- |
+| `Error loading SSO Token`, `The SSO session associated with this profile has expired` | Your session expired: run `aws sso login --profile training-books`. |
+| `InvalidClientTokenId`, `The security token included in the request is invalid` | Leftover static access keys from the old IAM setup: remove the `[training-books]` section from `~/.aws/credentials`, since that file overrides the Identity Center profile in `~/.aws/config`. |
+| `Unable to resolve AWS account to use` / CDK deploys to the wrong account | The profile wasn't passed. Every CDK command needs `--profile training-books` (the `deploy.sh` and `release.sh` scripts already do this). |
+| `aws: error: argument operation: Invalid choice: 'sso'` | You're on AWS CLI v1: install [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html). |
+| `AccessDenied` while creating resources | Your permission set is too restrictive: ask the trainers for one that can create Lambda, API Gateway, DynamoDB, S3 and CloudFront resources. |
+| `Missing or Mismatching STAGE` | The `STAGE` constant in `back-end/deploy/main.ts` doesn't match the initials you passed to `./deploy.sh`. |
 
 ## Contributing
 

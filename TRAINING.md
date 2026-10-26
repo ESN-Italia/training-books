@@ -104,6 +104,7 @@ After implementing the CRUD operations, test each operation using tools like Pos
 
 1. **Run your application**:
 
+   - Make sure your AWS IAM Identity Center session is still active: `aws sso login --profile training-books`. The session expires after a few hours, and an expired one makes the deploy fail with `Error loading SSO Token`.
    - Deploy the backend with `./deploy.sh <your_initials>`.
    - Ensure the frontend is connected to the correct API endpoint.
 
